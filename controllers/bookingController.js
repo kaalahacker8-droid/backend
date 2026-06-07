@@ -125,10 +125,13 @@ exports.createBooking = async (req, res) => {
     const { pickupPlaceId, dropPlaceId, paymentMethod } = req.body;
     const userId = req.user._id;
 
-    // Check if user already has an active booking
+    console.log(`[Booking] CREATE REQUEST - User: ${userId}, Pickup: ${pickupPlaceId}, Drop: ${dropPlaceId}, Method: ${paymentMethod}`);
+    console.log(`[Booking] Full request body:`, JSON.stringify(req.body, null, 2));
+
+    // Check if user already has an active booking (exclude pending - those are payment incomplete)
     const activeBooking = await Booking.findOne({
       userId,
-      status: { $in: ['pending', 'searching', 'accepted', 'started'] }
+      status: { $in: ['searching', 'accepted', 'started'] }
     });
 
     if (activeBooking) {
@@ -184,10 +187,12 @@ exports.createBooking = async (req, res) => {
         }
       });
 
+      console.log(`[Booking] Creating online booking - User: ${userId}, Pickup: ${pickupPlaceId}, Drop: ${dropPlaceId}, Fare: ${fare}`);
+
       booking = await Booking.create({
         userId,
-        pickupPlaceId,
-        dropPlaceId,
+        pickupPlace: pickupPlaceId,
+        dropPlace: dropPlaceId,
         fare,
         platformFee,
         driverEarning,
@@ -196,6 +201,8 @@ exports.createBooking = async (req, res) => {
         razorpayOrderId: order.id,
         rideOtp
       });
+
+      console.log(`[Booking] Online booking created successfully - ID: ${booking._id}`);
 
       return res.status(200).json({
         success: true,
@@ -211,10 +218,12 @@ exports.createBooking = async (req, res) => {
       });
     } else if (paymentMethod === 'cash') {
       // Create booking with cash payment
+      console.log(`[Booking] Creating cash booking - User: ${userId}, Pickup: ${pickupPlaceId}, Drop: ${dropPlaceId}, Fare: ${fare}`);
+      
       booking = await Booking.create({
         userId,
-        pickupPlaceId,
-        dropPlaceId,
+        pickupPlace: pickupPlaceId,
+        dropPlace: dropPlaceId,
         fare,
         platformFee,
         driverEarning,
@@ -222,6 +231,8 @@ exports.createBooking = async (req, res) => {
         status: 'searching',
         rideOtp
       });
+
+      console.log(`[Booking] Cash booking created successfully - ID: ${booking._id}`);
 
       // Find nearest driver asynchronously
       findNearestDriver(booking._id, pickupPlace, req);
@@ -238,6 +249,24 @@ exports.createBooking = async (req, res) => {
       });
     }
   } catch (error) {
+    console.error(`[Booking] ERROR creating booking - User: ${req.user._id}`);
+    console.error(`[Booking] Error name: ${error.name}`);
+    console.error(`[Booking] Error message: ${error.message}`);
+    console.error(`[Booking] Error stack:`, error.stack);
+    if (error.errors) {
+      console.error(`[Booking] Validation errors:`, JSON.stringify(error.errors, null, 2));
+    }
+    
+    // Return validation errors if present
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking validation failed',
+        errors: error.errors,
+        error: error.message
+      });
+    }
+    
     return res.status(500).json({
       success: false,
       message: 'Error creating booking',
@@ -251,6 +280,8 @@ exports.confirmPayment = async (req, res) => {
   try {
     const { bookingId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
     const userId = req.user._id;
+
+    console.log(`[Booking] CONFIRM PAYMENT - User: ${userId}, Booking: ${bookingId}, Order: ${razorpayOrderId}`);
 
     // Find booking and verify ownership
     const booking = await Booking.findById(bookingId);
@@ -326,6 +357,8 @@ exports.getBooking = async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log(`[Booking] GET BOOKING - ID: ${id}, User: ${req.user._id}`);
+
     const booking = await Booking.findById(id)
       .populate('userId', 'name mobile')
       .populate('driverId', 'name mobile vehicleNumber vehicleModel vehicleColor rating currentLocation')
@@ -333,15 +366,19 @@ exports.getBooking = async (req, res) => {
       .populate('dropPlace', 'name lat lng');
 
     if (!booking) {
+      console.log(`[Booking] Booking not found - ID: ${id}`);
       return res.status(404).json({
         success: false,
         message: 'Booking not found'
       });
     }
 
+    console.log(`[Booking] Booking found - ID: ${id}, Status: ${booking.status}`);
+
     // Verify ownership
     if (req.user._id.toString() !== booking.userId._id.toString() &&
         (booking.driverId === null || req.user._id.toString() !== booking.driverId._id.toString())) {
+      console.log(`[Booking] Authorization failed - User: ${req.user._id}, Booking owner: ${booking.userId._id}`);
       return res.status(403).json({
         success: false,
         message: 'Not authorized to view this booking'
@@ -353,6 +390,7 @@ exports.getBooking = async (req, res) => {
       booking
     });
   } catch (error) {
+    console.error(`[Booking] Error fetching booking:`, error.message);
     return res.status(500).json({
       success: false,
       message: 'Error fetching booking',
@@ -453,15 +491,18 @@ exports.activeBooking = async (req, res) => {
     let query;
 
     if (req.role === 'user') {
+      // FIXED: Exclude 'pending' status - pending means payment not completed
       query = {
         userId: req.user._id,
-        status: { $in: ['pending', 'searching', 'accepted', 'started'] }
+        status: { $in: ['searching', 'accepted', 'started'] }
       };
+      console.log(`[Booking] GET ACTIVE BOOKING - User: ${req.user._id}`);
     } else if (req.role === 'driver') {
       query = {
         driverId: req.user._id,
         status: { $in: ['accepted', 'started'] }
       };
+      console.log(`[Booking] GET ACTIVE BOOKING - Driver: ${req.user._id}`);
     }
 
     const booking = await Booking.findOne(query)
@@ -470,11 +511,18 @@ exports.activeBooking = async (req, res) => {
       .populate('pickupPlace')
       .populate('dropPlace');
 
+    if (booking) {
+      console.log(`[Booking] Active booking found - ID: ${booking._id}, Status: ${booking.status}`);
+    } else {
+      console.log(`[Booking] No active booking found for user/driver`);
+    }
+
     return res.status(200).json({
       success: true,
       booking: booking || null
     });
   } catch (error) {
+    console.error(`[Booking] Error fetching active booking:`, error.message);
     return res.status(500).json({
       success: false,
       message: 'Error fetching active booking',

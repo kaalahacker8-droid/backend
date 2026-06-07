@@ -8,7 +8,7 @@ const sendOTP = async (mobile, otp) => {
   }
 
   try {
-    const url = `https://api.msg91.com/api/v5/otp?template_id=${process.env.MSG91_TEMPLATE_ID}&mobile=${formattedMobile}&authkey=${process.env.MSG91_AUTH_KEY}&otp=${otp}`;
+    const url = `https://api.msg91.com/api/v5/otp?mobile=${formattedMobile}&authkey=${process.env.MSG91_AUTH_KEY}&otp=${otp}`;
     const response = await axios.post(url, {}, {
       headers: { "Content-Type": "application/json" },
     });
