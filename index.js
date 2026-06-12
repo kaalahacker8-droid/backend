@@ -1,4 +1,4 @@
-﻿require("dotenv").config();
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
@@ -52,12 +52,15 @@ app.use(
     })
 );
 
+// FIXED: Added the validation block to prevent the proxy error log on cloud hosting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { trustProxy: false }
 });
+
 app.set('trust proxy', true);
 app.use(limiter);
 
