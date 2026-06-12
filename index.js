@@ -54,14 +54,14 @@ app.use(
 
 // FIXED: Added the validation block to prevent the proxy error log on cloud hosting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-    validate: { trustProxy: false }
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 
-app.set('trust proxy', true);
+// Securely trust only the outer cloud proxy/load balancer
+app.set('trust proxy', 1); 
 app.use(limiter);
 
 app.use("/api/auth", authRoutes);
